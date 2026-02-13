@@ -1,0 +1,383 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Manager Dashboard</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;700&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+    <style>
+        *{margin:0;padding:0;box-sizing:border-box;}
+        :root{--primary:#2563eb;--primary-dark:#1e40af;--bg:#0f172a;--card:#1e293b;--input:#334155;--text:#f1f5f9;--muted:#94a3b8;--border:#334155;--accent:#3b82f6;--success:#10b981;--danger:#ef4444;}
+        body{font-family:'DM Sans',sans-serif;background:var(--bg);color:var(--text);min-height:100vh;}
+        .sidebar{position:fixed;left:0;top:0;bottom:0;width:250px;background:var(--card);border-right:1px solid var(--border);display:flex;flex-direction:column;z-index:100;overflow-y:auto;}
+        .sidebar-logo{padding:1.5rem;border-bottom:1px solid var(--border);}
+        .sidebar-logo h1{font-size:1.15rem;font-weight:700;background:linear-gradient(135deg,var(--text),var(--accent));-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;}
+        .sidebar-logo p{font-size:0.72rem;color:var(--muted);font-family:'JetBrains Mono',monospace;margin-top:0.2rem;}
+        .sidebar-section{padding:0.75rem 0;border-bottom:1px solid var(--border);}
+        .sidebar-title{padding:0.4rem 1.25rem;font-size:0.68rem;font-weight:700;text-transform:uppercase;letter-spacing:0.1em;color:var(--muted);}
+        .nav-item{display:flex;align-items:center;gap:0.6rem;padding:0.55rem 1.25rem;cursor:pointer;transition:all 0.2s;font-size:0.9rem;color:var(--muted);position:relative;}
+        .nav-item:hover{background:rgba(59,130,246,0.08);color:var(--text);}
+        .nav-item.active{background:rgba(59,130,246,0.15);color:var(--accent);font-weight:600;}
+        .nav-item.active::before{content:'';position:absolute;left:0;top:0;bottom:0;width:3px;background:var(--accent);border-radius:0 2px 2px 0;}
+        .refresh-btn{margin:1rem 1.25rem;padding:0.6rem 1rem;background:rgba(16,185,129,0.1);border:1px solid rgba(16,185,129,0.3);border-radius:0.5rem;color:var(--success);cursor:pointer;font-size:0.85rem;text-align:center;transition:all 0.2s;font-weight:600;}
+        .refresh-btn:hover{background:rgba(16,185,129,0.2);}
+        .main{margin-left:250px;padding:2rem;min-height:100vh;}
+        .page{display:none;}
+        .page.active{display:block;}
+        .page-header{margin-bottom:2rem;padding-bottom:1.5rem;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:1rem;}
+        .page-header h2{font-size:1.8rem;font-weight:700;background:linear-gradient(135deg,var(--text),var(--accent));-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;}
+        .status-badge{display:inline-flex;align-items:center;gap:0.5rem;padding:0.5rem 1rem;background:var(--card);border:1px solid var(--border);border-radius:2rem;font-size:0.78rem;font-family:'JetBrains Mono',monospace;}
+        .dot{width:7px;height:7px;border-radius:50%;background:var(--success);animation:pulse 2s ease-in-out infinite;}
+        @keyframes pulse{0%,100%{opacity:1;}50%{opacity:0.4;}}
+        .charts-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(460px,1fr));gap:1.5rem;margin-bottom:2rem;}
+        .chart-card{background:var(--card);border:1px solid var(--border);border-radius:1rem;padding:1.5rem;transition:all 0.3s;}
+        .chart-card:hover{transform:translateY(-2px);box-shadow:0 8px 20px rgba(0,0,0,0.25);}
+        .chart-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem;}
+        .chart-title{font-size:1.05rem;font-weight:600;}
+        .chart-value{font-size:1.35rem;font-weight:700;font-family:'JetBrains Mono',monospace;color:var(--accent);}
+        .chart-canvas{position:relative;height:240px;}
+        .summary-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:1rem;margin-bottom:2rem;}
+        .summary-card{background:var(--card);border:1px solid var(--border);border-radius:1rem;padding:1.25rem;text-align:center;}
+        .summary-card .emp-name{font-size:0.8rem;color:var(--muted);margin-bottom:0.5rem;}
+        .summary-card .emp-val{font-size:1.5rem;font-weight:700;font-family:'JetBrains Mono',monospace;color:var(--accent);}
+        .summary-card .emp-graph{font-size:0.75rem;color:var(--muted);margin-top:0.25rem;}
+        .comparison-chart{background:var(--card);border:1px solid var(--border);border-radius:1rem;padding:1.5rem;margin-bottom:2rem;}
+        .comparison-chart h3{font-size:1.1rem;font-weight:600;margin-bottom:1rem;}
+        .comp-canvas{position:relative;height:300px;}
+        .data-table{background:var(--card);border:1px solid var(--border);border-radius:1rem;overflow:hidden;margin-bottom:2rem;}
+        .table-header{padding:1.1rem 1.5rem;border-bottom:1px solid var(--border);font-weight:600;}
+        table{width:100%;border-collapse:collapse;}
+        thead{background:var(--input);}
+        th{padding:0.75rem 1rem;text-align:left;font-size:0.75rem;font-weight:700;text-transform:uppercase;letter-spacing:0.05em;color:var(--muted);}
+        td{padding:0.75rem 1rem;border-top:1px solid var(--border);font-family:'JetBrains Mono',monospace;font-size:0.85rem;}
+        tbody tr:hover{background:rgba(59,130,246,0.04);}
+        .emp-colors{background:rgba(59,130,246,0.1);color:var(--accent);padding:0.2rem 0.6rem;border-radius:1rem;font-size:0.8rem;}
+        .link-card{background:var(--card);border:1px solid var(--border);border-radius:1rem;padding:1.5rem;margin-bottom:1rem;}
+        .link-card h4{font-size:0.9rem;font-weight:600;margin-bottom:0.75rem;color:var(--muted);text-transform:uppercase;letter-spacing:0.05em;}
+        .link-row{display:flex;align-items:center;gap:1rem;margin-bottom:0.5rem;}
+        .link-url{flex:1;padding:0.6rem 0.9rem;background:var(--input);border:1px solid var(--border);border-radius:0.5rem;font-family:'JetBrains Mono',monospace;font-size:0.8rem;color:var(--muted);}
+        .copy-btn{padding:0.5rem 1rem;background:var(--accent);color:white;border:none;border-radius:0.5rem;cursor:pointer;font-size:0.8rem;font-weight:600;font-family:'DM Sans',sans-serif;white-space:nowrap;}
+        .copy-btn:hover{background:var(--primary-dark);}
+        .emp-label{min-width:100px;font-weight:600;font-size:0.9rem;}
+    </style>
+</head>
+<body>
+
+<div class="sidebar">
+    <div class="sidebar-logo">
+        <h1>📊 Manager Dashboard</h1>
+        <p>Employee Stats Overview</p>
+    </div>
+    <div class="sidebar-section">
+        <div class="sidebar-title">Overview</div>
+        <div class="nav-item active" onclick="showPage('overview')" id="nav-overview"><span>🏠</span> Overview</div>
+        <div class="nav-item" onclick="showPage('comparison')" id="nav-comparison"><span>⚖️</span> Comparison</div>
+        <div class="nav-item" onclick="showPage('links')" id="nav-links"><span>🔗</span> Employee Links</div>
+    </div>
+    <div class="sidebar-section">
+        <div class="sidebar-title">Employees</div>
+        <div id="empNavItems"></div>
+    </div>
+    <div class="refresh-btn" onclick="refreshAll()">🔄 Refresh Data</div>
+    <div style="padding:1rem 1.25rem;font-size:0.72rem;color:var(--muted);font-family:'JetBrains Mono',monospace;" id="lastRefresh">Never refreshed</div>
+</div>
+
+<div class="main">
+    <!-- OVERVIEW -->
+    <div class="page active" id="page-overview">
+        <div class="page-header">
+            <h2>Overview</h2>
+            <div class="status-badge"><span class="dot"></span> Live from Supabase</div>
+        </div>
+        <div class="summary-grid" id="summaryGrid"></div>
+        <div class="charts-grid" id="overviewCharts"></div>
+    </div>
+
+    <!-- COMPARISON -->
+    <div class="page" id="page-comparison">
+        <div class="page-header"><h2>⚖️ Comparison</h2></div>
+        <div id="comparisonContent"></div>
+    </div>
+
+    <!-- LINKS -->
+    <div class="page" id="page-links">
+        <div class="page-header"><h2>🔗 Employee Links</h2></div>
+        <p style="color:var(--muted);margin-bottom:1.5rem;">Send these links to your employees. Each link opens their personal dashboard.</p>
+        <div id="linksContent"></div>
+    </div>
+
+    <!-- EMPLOYEE PAGES -->
+    <div id="empPages"></div>
+</div>
+
+<script>
+const SUPABASE_URL = 'https://fuvnwjskwjtvpwtbdzey.supabase.co';
+const SUPABASE_KEY = 'sb_publishable_8w77NMR3vcQXnJ6YpbN6Fw_6QgiI6Sl';
+
+// ⬇️ EDIT THESE TO MATCH YOUR EMPLOYEES AND GRAPHS
+const EMPLOYEES = {
+    'employee1': 'Employee 1',
+    'employee2': 'Employee 2',
+    'employee3': 'Employee 3',
+    'employee4': 'Employee 4',
+    'employee5': 'Employee 5'
+};
+
+// URL of the employee fill-in page (update after deploying)
+const EMPLOYEE_PAGE_URL = 'https://buzzadvertisements-blip.github.io/employee-dashboard/';
+
+const EMP_COLORS = ['#3b82f6','#22c55e','#f59e0b','#ec4899','#8b5cf6'];
+
+let allData = {};
+let empCharts = {};
+
+// ═══ SUPABASE ═══
+async function fetchAll() {
+    const res = await fetch(`${SUPABASE_URL}/rest/v1/employee_data?order=year.asc,week.asc`, {
+        headers: { 'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}` }
+    });
+    return res.json();
+}
+
+async function refreshAll() {
+    document.querySelector('.refresh-btn').textContent = '⏳ Loading...';
+    try {
+        const rows = await fetchAll();
+        allData = {};
+        Object.keys(EMPLOYEES).forEach(id => { allData[id] = []; });
+        rows.forEach(r => { if (allData[r.employee_id]) allData[r.employee_id].push(r); });
+        renderAll();
+        document.getElementById('lastRefresh').textContent = `Updated: ${new Date().toLocaleTimeString()}`;
+    } catch(e) { console.error(e); }
+    document.querySelector('.refresh-btn').textContent = '🔄 Refresh Data';
+}
+
+// ═══ WEEK UTILS ═══
+function getWeekDates(year, week) {
+    const jan1 = new Date(year, 0, 1);
+    const dayOfWeek = jan1.getDay() || 7;
+    const monday = new Date(jan1);
+    monday.setDate(jan1.getDate() + (week - 1) * 7 - dayOfWeek + 1);
+    const sunday = new Date(monday);
+    sunday.setDate(monday.getDate() + 6);
+    const fmt = d => d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+    return `${fmt(monday)} – ${fmt(sunday)}`;
+}
+
+// ═══ NAV ═══
+function showPage(id) {
+    document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+    document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
+    const page = document.getElementById('page-' + id);
+    if (page) page.classList.add('active');
+    const nav = document.getElementById('nav-' + id);
+    if (nav) nav.classList.add('active');
+}
+
+function makeChart(canvasId, labels, datasets, type='line') {
+    const el = document.getElementById(canvasId);
+    if (!el) return;
+    return new Chart(el.getContext('2d'), {
+        type,
+        data: { labels, datasets },
+        options: {
+            responsive: true, maintainAspectRatio: false,
+            plugins: { legend: { display: datasets.length > 1, labels: { color: '#94a3b8', boxWidth: 12 } } },
+            scales: {
+                y: { beginAtZero: true, grid: { color: 'rgba(148,163,184,0.1)' }, ticks: { color: '#94a3b8' } },
+                x: { grid: { color: 'rgba(148,163,184,0.1)' }, ticks: { color: '#94a3b8', maxRotation: 45 } }
+            }
+        }
+    });
+}
+
+// ═══ RENDER ALL ═══
+function renderAll() {
+    renderSidebar();
+    renderOverview();
+    renderComparison();
+    renderLinks();
+    renderEmpPages();
+}
+
+function renderSidebar() {
+    const c = document.getElementById('empNavItems');
+    c.innerHTML = '';
+    Object.entries(EMPLOYEES).forEach(([id, name]) => {
+        const d = document.createElement('div');
+        d.className = 'nav-item';
+        d.id = 'nav-' + id;
+        d.innerHTML = `<span>👤</span> ${name}`;
+        d.onclick = () => showPage(id);
+        c.appendChild(d);
+    });
+}
+
+function renderOverview() {
+    const grid = document.getElementById('summaryGrid');
+    const charts = document.getElementById('overviewCharts');
+    grid.innerHTML = '';
+    charts.innerHTML = '';
+
+    Object.entries(EMPLOYEES).forEach(([id, name], idx) => {
+        const data = allData[id] || [];
+        const graphs = [...new Set(data.map(d => d.graph_name))];
+        graphs.forEach(g => {
+            const entries = data.filter(d => d.graph_name === g).slice(-1);
+            const latest = entries.length ? entries[0].value : 0;
+            const card = document.createElement('div');
+            card.className = 'summary-card';
+            card.innerHTML = `<div class="emp-name">${name}</div><div class="emp-val">${Number(latest).toLocaleString('en-US')}</div><div class="emp-graph">${g}</div>`;
+            grid.appendChild(card);
+        });
+
+        // Chart per graph
+        graphs.forEach(g => {
+            const entries = data.filter(d => d.graph_name === g).slice(-12);
+            const card = document.createElement('div');
+            card.className = 'chart-card';
+            const latest = entries.length ? entries[entries.length-1].value : 0;
+            const cid = `ov_${id}_${g.replace(/\s/g,'_')}`;
+            card.innerHTML = `<div class="chart-header"><span class="chart-title">${name} — ${g}</span><span class="chart-value">${Number(latest).toLocaleString('en-US')}</span></div><div class="chart-canvas"><canvas id="${cid}"></canvas></div>`;
+            charts.appendChild(card);
+            setTimeout(() => {
+                makeChart(cid,
+                    entries.map(d => `W${String(d.week).padStart(2,'0')} '${String(d.year).slice(2)}`),
+                    [{ data: entries.map(d => d.value), borderColor: EMP_COLORS[idx % EMP_COLORS.length], backgroundColor: EMP_COLORS[idx % EMP_COLORS.length].replace(')',',0.1)').replace('rgb','rgba'), borderWidth:2.5, tension:0.4, fill:true, pointRadius:4, pointBackgroundColor: EMP_COLORS[idx % EMP_COLORS.length], pointBorderColor:'#1e293b', pointBorderWidth:2 }]
+                );
+            }, 50);
+        });
+    });
+}
+
+function renderComparison() {
+    const content = document.getElementById('comparisonContent');
+    content.innerHTML = '';
+    const allGraphs = [...new Set(Object.values(allData).flat().map(d => d.graph_name))];
+
+    allGraphs.forEach(g => {
+        const allWeeks = [...new Set(Object.values(allData).flat().filter(d => d.graph_name === g).map(d => `${d.year}-W${String(d.week).padStart(2,'0')}`))].sort().slice(-12);
+        const card = document.createElement('div');
+        card.className = 'comparison-chart';
+        const cid = `comp_${g.replace(/\s/g,'_')}`;
+        card.innerHTML = `<h3>📊 ${g} — All Employees</h3><div class="comp-canvas"><canvas id="${cid}"></canvas></div>`;
+        content.appendChild(card);
+
+        const datasets = Object.entries(EMPLOYEES).map(([id, name], idx) => ({
+            label: name,
+            data: allWeeks.map(wk => {
+                const [y, w] = wk.split('-W').map(Number);
+                const e = (allData[id] || []).find(d => d.graph_name === g && d.year === y && d.week === w);
+                return e ? e.value : null;
+            }),
+            borderColor: EMP_COLORS[idx % EMP_COLORS.length],
+            backgroundColor: 'transparent',
+            borderWidth: 2.5, tension: 0.4, pointRadius: 4,
+            pointBackgroundColor: EMP_COLORS[idx % EMP_COLORS.length],
+            pointBorderColor: '#1e293b', pointBorderWidth: 2
+        }));
+
+        setTimeout(() => makeChart(cid, allWeeks.map(w => w.replace('-', ' ')), datasets), 50);
+    });
+
+    if (!allGraphs.length) {
+        content.innerHTML = '<p style="color:var(--muted);text-align:center;padding:3rem;">No data yet. Waiting for employees to submit their reports.</p>';
+    }
+}
+
+function renderLinks() {
+    const content = document.getElementById('linksContent');
+    content.innerHTML = '';
+    const card = document.createElement('div');
+    card.className = 'link-card';
+    card.innerHTML = '<h4>Send these links to your employees</h4>';
+    Object.entries(EMPLOYEES).forEach(([id, name]) => {
+        const url = `${EMPLOYEE_PAGE_URL}?emp=${id}`;
+        const row = document.createElement('div');
+        row.className = 'link-row';
+        row.innerHTML = `
+            <span class="emp-label">👤 ${name}</span>
+            <div class="link-url">${url}</div>
+            <button class="copy-btn" onclick="copyLink('${url}', this)">📋 Copy</button>`;
+        card.appendChild(row);
+    });
+    content.appendChild(card);
+}
+
+function copyLink(url, btn) {
+    navigator.clipboard.writeText(url);
+    btn.textContent = '✅ Copied!';
+    setTimeout(() => btn.textContent = '📋 Copy', 2000);
+}
+
+function renderEmpPages() {
+    const container = document.getElementById('empPages');
+    container.innerHTML = '';
+    Object.entries(EMPLOYEES).forEach(([id, name], idx) => {
+        const data = allData[id] || [];
+        const graphs = [...new Set(data.map(d => d.graph_name))];
+        const page = document.createElement('div');
+        page.className = 'page';
+        page.id = 'page-' + id;
+
+        const allWeeks = [...new Set(data.map(d => `${d.year}-${d.week}`))].sort().reverse();
+        const tableRows = allWeeks.map(wk => {
+            const [y, w] = wk.split('-').map(Number);
+            const cells = graphs.map(g => {
+                const e = data.find(d => d.graph_name === g && d.year === y && d.week === w);
+                let html = e ? Number(e.value).toLocaleString('en-US') : '—';
+                if (e && e.breakdown) {
+                    try {
+                        const items = JSON.parse(e.breakdown);
+                        if (items.length) html += `<div style="font-size:0.72rem;color:var(--muted);margin-top:0.2rem;">${items.map(i=>`• ${i}`).join('<br/>')}</div>`;
+                    } catch(err){}
+                }
+                return `<td>${html}</td>`;
+            }).join('');
+            return `<tr><td>W${String(w).padStart(2,'0')} ${y}</td><td style="color:var(--muted)">${getWeekDates(y,w)}</td>${cells}</tr>`;
+        }).join('');
+
+        const chartsHtml = graphs.map(g => {
+            const entries = data.filter(d => d.graph_name === g).slice(-12);
+            const latest = entries.length ? entries[entries.length-1].value : 0;
+            const cid = `emp_${id}_${g.replace(/\s/g,'_')}`;
+            return `<div class="chart-card"><div class="chart-header"><span class="chart-title">${g}</span><span class="chart-value">${Number(latest).toLocaleString('en-US')}</span></div><div class="chart-canvas"><canvas id="${cid}"></canvas></div></div>`;
+        }).join('');
+
+        page.innerHTML = `
+            <div class="page-header">
+                <h2>👤 ${name}</h2>
+                <div class="status-badge"><span class="dot"></span> Live Data</div>
+            </div>
+            <div class="charts-grid">${chartsHtml}</div>
+            <div class="data-table">
+                <div class="table-header">Historical Data</div>
+                <div style="overflow-x:auto;"><table>
+                    <thead><tr><th>Week</th><th>Dates</th>${graphs.map(g=>`<th>${g}</th>`).join('')}</tr></thead>
+                    <tbody>${tableRows || `<tr><td colspan="${graphs.length+2}" style="text-align:center;padding:2rem;color:var(--muted)">No data yet</td></tr>`}</tbody>
+                </table></div>
+            </div>`;
+        container.appendChild(page);
+
+        setTimeout(() => {
+            graphs.forEach((g, gi) => {
+                const entries = data.filter(d => d.graph_name === g).slice(-12);
+                const cid = `emp_${id}_${g.replace(/\s/g,'_')}`;
+                makeChart(cid,
+                    entries.map(d => `W${String(d.week).padStart(2,'0')} '${String(d.year).slice(2)}`),
+                    [{ data: entries.map(d => d.value), borderColor: EMP_COLORS[idx % EMP_COLORS.length], backgroundColor: EMP_COLORS[idx % EMP_COLORS.length] + '1a', borderWidth:2.5, tension:0.4, fill:true, pointRadius:4, pointBackgroundColor: EMP_COLORS[idx % EMP_COLORS.length], pointBorderColor:'#1e293b', pointBorderWidth:2 }]
+                );
+            });
+        }, 100);
+    });
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+    renderSidebar();
+    renderLinks();
+    refreshAll();
+});
+</script>
+</body>
+</html>
