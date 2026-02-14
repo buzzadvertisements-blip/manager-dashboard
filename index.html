@@ -40,6 +40,14 @@
         .chart-title{font-size:1.05rem;font-weight:600;}
         .chart-value{font-size:1.35rem;font-weight:700;font-family:'JetBrains Mono',monospace;color:var(--accent);}
         .chart-canvas{position:relative;height:240px;}
+        .chart-nav{display:flex;align-items:center;justify-content:center;gap:0.5rem;margin-bottom:1.5rem;flex-wrap:wrap;}
+        .nav-btn{padding:0.4rem 0.85rem;background:var(--input);border:1px solid var(--border);border-radius:0.5rem;color:var(--text);cursor:pointer;font-size:0.82rem;font-weight:600;font-family:'DM Sans',sans-serif;transition:all 0.2s;white-space:nowrap;}
+        .nav-btn:hover{background:var(--border);transform:translateY(-1px);}
+        .nav-btn.accent{background:rgba(59,130,246,0.1);border-color:rgba(59,130,246,0.3);color:var(--accent);}
+        .nav-btn.accent:hover{background:rgba(59,130,246,0.2);}
+        .nav-btn.reset{background:var(--accent);color:white;border-color:var(--accent);}
+        .nav-btn.reset:hover{background:var(--primary-dark);}
+        .range-label{padding:0.4rem 1rem;background:var(--input);border-radius:0.5rem;font-family:'JetBrains Mono',monospace;font-size:0.78rem;color:var(--accent);white-space:nowrap;}
         .summary-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:1rem;margin-bottom:2rem;}
         .summary-card{background:var(--card);border:1px solid var(--border);border-radius:1rem;padding:1.25rem;text-align:center;}
         .s-name{font-size:0.8rem;color:var(--muted);margin-bottom:0.4rem;}
@@ -170,6 +178,22 @@ const COLORS = ['#3b82f6','#22c55e','#f59e0b','#ec4899','#8b5cf6','#06b6d4','#f9
 
 let config = [];
 let allData = {};
+let viewOffset = 0;
+
+function getWindowData(data) {
+    const total = data.length;
+    let end = total + viewOffset;
+    if (end > total) end = total;
+    let start = end - 12;
+    if (start < 0) start = 0;
+    return data.slice(start, end);
+}
+
+function shiftView(n) {
+    viewOffset = Math.min(0, viewOffset + n);
+    renderOverview(); renderComparison(); renderEmpPages();
+}
+function resetView() { viewOffset = 0; renderOverview(); renderComparison(); renderEmpPages(); }
 
 async function sb(method, table, body, qs='') {
     const r = await fetch(`${SB_URL}/rest/v1/${table}${qs}`, {
@@ -251,15 +275,33 @@ function renderNav() {
 function renderOverview() {
     const sg = document.getElementById('summaryGrid'), oc = document.getElementById('overviewCharts');
     sg.innerHTML=''; oc.innerHTML='';
+
+    // Nav bar
+    const nav = document.createElement('div');
+    nav.style.cssText = 'grid-column:1/-1;';
+    nav.innerHTML = `<div class="chart-nav">
+        <button class="nav-btn" onclick="shiftView(-13)">⏪ 3 Months</button>
+        <button class="nav-btn accent" onclick="shiftView(-1)">⬅️ 1 Week</button>
+        <button class="nav-btn accent" onclick="shiftView(1)">1 Week ➡️</button>
+        <button class="nav-btn" onclick="shiftView(13)">3 Months ⏩</button>
+        <button class="nav-btn reset" onclick="resetView()">📅 Latest</button>
+    </div>`;
+    oc.appendChild(nav);
+
     config.forEach((emp,i)=>{
         const data = allData[emp.employee_id]||[];
         emp.graphs.forEach(g=>{
             const entries = data.filter(d=>d.graph_name===g);
             const latest = entries.length ? entries[entries.length-1].value : 0;
             sg.innerHTML += `<div class="summary-card"><div class="s-name">${emp.employee_name}</div><div class="s-val">${Number(latest).toLocaleString()}</div><div class="s-graph">${g}</div></div>`;
-            const last12 = entries.slice(-12), cid=`ov_${emp.employee_id}_${g.replace(/\W/g,'_')}`, col=COLORS[i%COLORS.length];
-            oc.innerHTML += `<div class="chart-card"><div class="chart-header"><span class="chart-title">${emp.employee_name} — ${g}</span><span class="chart-value">${Number(latest).toLocaleString()}</span></div><div class="chart-canvas"><canvas id="${cid}"></canvas></div></div>`;
-            setTimeout(()=>mkChart(cid, last12.map(d=>`W${String(d.week).padStart(2,'0')} '${String(d.year).slice(2)}`), [{data:last12.map(d=>d.value),borderColor:col,backgroundColor:col+'22',borderWidth:2.5,tension:0.4,fill:true,pointRadius:4,pointBackgroundColor:col,pointBorderColor:'#1e293b',pointBorderWidth:2}]),80);
+            const win = getWindowData(entries);
+            const col = COLORS[i%COLORS.length];
+            const cid = `ov_${emp.employee_id}_${g.replace(/\W/g,'_')}`;
+            const card = document.createElement('div');
+            card.className = 'chart-card';
+            card.innerHTML = `<div class="chart-header"><span class="chart-title">${emp.employee_name} — ${g}</span><span class="chart-value">${Number(latest).toLocaleString()}</span></div><div class="chart-canvas"><canvas id="${cid}"></canvas></div>`;
+            oc.appendChild(card);
+            setTimeout(()=>mkChart(cid, win.map(d=>`W${String(d.week).padStart(2,'0')} '${String(d.year).slice(2)}`), [{data:win.map(d=>d.value),borderColor:col,backgroundColor:col+'22',borderWidth:2.5,tension:0.4,fill:true,pointRadius:4,pointBackgroundColor:col,pointBorderColor:'#1e293b',pointBorderWidth:2}]),80);
         });
     });
     if(!config.length) oc.innerHTML='<p style="color:var(--muted);grid-column:1/-1;text-align:center;padding:3rem;">No employees. Add one in Settings!</p>';
@@ -269,10 +311,27 @@ function renderOverview() {
 function renderComparison() {
     const c = document.getElementById('compContent'); c.innerHTML='';
     const graphs = [...new Set(config.flatMap(e=>e.graphs))];
+
+    // Nav bar
+    const nav = document.createElement('div');
+    nav.innerHTML = `<div class="chart-nav">
+        <button class="nav-btn" onclick="shiftView(-13)">⏪ 3 Months</button>
+        <button class="nav-btn accent" onclick="shiftView(-1)">⬅️ 1 Week</button>
+        <button class="nav-btn accent" onclick="shiftView(1)">1 Week ➡️</button>
+        <button class="nav-btn" onclick="shiftView(13)">3 Months ⏩</button>
+        <button class="nav-btn reset" onclick="resetView()">📅 Latest</button>
+    </div>`;
+    c.appendChild(nav);
+
     graphs.forEach(g=>{
-        const weeks = [...new Set(Object.values(allData).flat().filter(d=>d.graph_name===g).map(d=>`${d.year}-W${String(d.week).padStart(2,'0')}`))].sort().slice(-12);
+        const allEntries = Object.values(allData).flat().filter(d=>d.graph_name===g);
+        const win = getWindowData(allEntries.filter((v,i,a)=>a.findIndex(x=>x.year===v.year&&x.week===v.week)===i).sort((a,b)=>a.year-b.year||a.week-b.week));
+        const weeks = win.map(d=>`${d.year}-W${String(d.week).padStart(2,'0')}`);
         const cid = `comp_${g.replace(/\W/g,'_')}`;
-        c.innerHTML += `<div class="comp-card"><h3>📊 ${g}</h3><div class="comp-canvas"><canvas id="${cid}"></canvas></div></div>`;
+        const card = document.createElement('div');
+        card.className='comp-card';
+        card.innerHTML=`<h3>📊 ${g}</h3><div class="comp-canvas"><canvas id="${cid}"></canvas></div>`;
+        c.appendChild(card);
         const ds = config.map((emp,i)=>({
             label:emp.employee_name,
             data:weeks.map(wk=>{const[y,w]=wk.split('-W').map(Number);const e=(allData[emp.employee_id]||[]).find(d=>d.graph_name===g&&d.year===y&&d.week===w);return e?e.value:null;}),
@@ -280,7 +339,7 @@ function renderComparison() {
         }));
         setTimeout(()=>mkChart(cid,weeks.map(w=>w.replace('-W',' W')),ds),80);
     });
-    if(!graphs.length) c.innerHTML='<p style="color:var(--muted);text-align:center;padding:3rem;">No data yet.</p>';
+    if(!graphs.length) c.innerHTML+='<p style="color:var(--muted);text-align:center;padding:3rem;">No data yet.</p>';
 }
 
 // LINKS
@@ -342,10 +401,6 @@ function renderEmpPages() {
     config.forEach((emp,i)=>{
         const data=allData[emp.employee_id]||[], col=COLORS[i%COLORS.length];
         const weeks=[...new Set(data.map(d=>`${d.year}-${d.week}`))].sort().reverse();
-        const chartsHtml = emp.graphs.map(g=>{
-            const e=data.filter(d=>d.graph_name===g).slice(-12), lat=e.length?e[e.length-1].value:0, cid=`ep_${emp.employee_id}_${g.replace(/\W/g,'_')}`;
-            return `<div class="chart-card"><div class="chart-header"><span class="chart-title">${g}</span><span class="chart-value">${Number(lat).toLocaleString()}</span></div><div class="chart-canvas"><canvas id="${cid}"></canvas></div></div>`;
-        }).join('') || '<p style="color:var(--muted)">No graphs. Go to Settings to add graphs.</p>';
 
         const rows = weeks.map(wk=>{
             const[y,w]=wk.split('-').map(Number);
@@ -362,17 +417,36 @@ function renderEmpPages() {
         page.className='page'; page.id='page-'+emp.employee_id;
         page.innerHTML=`
             <div class="page-header"><h2>👤 ${emp.employee_name}</h2><div class="status-badge"><span class="dot"></span> Live Data</div></div>
-            <div class="charts-grid">${chartsHtml}</div>
+            <div class="chart-nav">
+                <button class="nav-btn" onclick="shiftView(-13)">⏪ 3 Months</button>
+                <button class="nav-btn accent" onclick="shiftView(-1)">⬅️ 1 Week</button>
+                <button class="nav-btn accent" onclick="shiftView(1)">1 Week ➡️</button>
+                <button class="nav-btn" onclick="shiftView(13)">3 Months ⏩</button>
+                <button class="nav-btn reset" onclick="resetView()">📅 Latest</button>
+            </div>
+            <div class="charts-grid" id="epcharts_${emp.employee_id}"></div>
             <div class="data-table"><div class="table-header">History</div><div style="overflow-x:auto;"><table>
                 <thead><tr><th>Week</th><th>Dates</th>${emp.graphs.map(g=>`<th>${g}</th>`).join('')}</tr></thead>
                 <tbody>${rows}</tbody>
             </table></div></div>`;
         c.appendChild(page);
-        setTimeout(()=>emp.graphs.forEach(g=>{
-            const e=data.filter(d=>d.graph_name===g).slice(-12), cid=`ep_${emp.employee_id}_${g.replace(/\W/g,'_')}`;
-            mkChart(cid,e.map(d=>`W${String(d.week).padStart(2,'0')} '${String(d.year).slice(2)}`),
-                [{data:e.map(d=>d.value),borderColor:col,backgroundColor:col+'22',borderWidth:2.5,tension:0.4,fill:true,pointRadius:4,pointBackgroundColor:col,pointBorderColor:'#1e293b',pointBorderWidth:2}]);
-        }),120);
+
+        setTimeout(()=>{
+            const grid = document.getElementById(`epcharts_${emp.employee_id}`);
+            if(!grid) return;
+            if(!emp.graphs.length){ grid.innerHTML='<p style="color:var(--muted)">No graphs. Go to Settings to add graphs.</p>'; return; }
+            emp.graphs.forEach(g=>{
+                const entries=data.filter(d=>d.graph_name===g);
+                const win=getWindowData(entries);
+                const lat=entries.length?entries[entries.length-1].value:0;
+                const cid=`ep_${emp.employee_id}_${g.replace(/\W/g,'_')}`;
+                const card=document.createElement('div'); card.className='chart-card';
+                card.innerHTML=`<div class="chart-header"><span class="chart-title">${g}</span><span class="chart-value">${Number(lat).toLocaleString()}</span></div><div class="chart-canvas"><canvas id="${cid}"></canvas></div>`;
+                grid.appendChild(card);
+                setTimeout(()=>mkChart(cid, win.map(d=>`W${String(d.week).padStart(2,'0')} '${String(d.year).slice(2)}`),
+                    [{data:win.map(d=>d.value),borderColor:col,backgroundColor:col+'22',borderWidth:2.5,tension:0.4,fill:true,pointRadius:4,pointBackgroundColor:col,pointBorderColor:'#1e293b',pointBorderWidth:2}]),50);
+            });
+        },120);
     });
 }
 
