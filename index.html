@@ -194,11 +194,21 @@ async function loadData() {
 }
 
 function getWeekDates(year, week) {
-    const jan1 = new Date(year,0,1), dow = jan1.getDay()||7;
-    const mon = new Date(jan1); mon.setDate(jan1.getDate()+(week-1)*7-dow+1);
-    const sun = new Date(mon); sun.setDate(mon.getDate()+6);
-    const f = d => d.toLocaleDateString('en-US',{month:'short',day:'numeric'});
-    return `${f(mon)} – ${f(sun)}`;
+    // Week starts Friday, ends Thursday
+    // Jan 1 of year, find the Friday on or before it
+    const jan1 = new Date(year, 0, 1);
+    const dow = jan1.getDay(); // 0=Sun
+    // Days to subtract to get to previous/same Friday
+    const toFri = (dow + 2) % 7; // Sun=2,Mon=3,Tue=4,Wed=5,Thu=6,Fri=0,Sat=1
+    const firstFri = new Date(jan1);
+    firstFri.setDate(jan1.getDate() - toFri);
+    // week 1 starts on firstFri
+    const fri = new Date(firstFri);
+    fri.setDate(firstFri.getDate() + (week - 1) * 7);
+    const thu = new Date(fri);
+    thu.setDate(fri.getDate() + 6);
+    const f = d => d.toLocaleDateString('en-US', {month:'short', day:'numeric'});
+    return `${f(fri)} – ${f(thu)}`;
 }
 
 function showPage(id) {
