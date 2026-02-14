@@ -191,9 +191,51 @@ function getWindowData(data) {
 
 function shiftView(n) {
     viewOffset = Math.min(0, viewOffset + n);
-    renderOverview(); renderComparison(); renderEmpPages();
+    // Find which page is currently active
+    const activePage = document.querySelector('.page.active');
+    if (!activePage) return;
+    const pageId = activePage.id.replace('page-', '');
+    if (pageId === 'overview') { renderOverview(); }
+    else if (pageId === 'comparison') { renderComparison(); }
+    else {
+        // Employee page - only re-render that employee's charts
+        refreshEmpCharts(pageId);
+    }
 }
-function resetView() { viewOffset = 0; renderOverview(); renderComparison(); renderEmpPages(); }
+function resetView() {
+    viewOffset = 0;
+    const activePage = document.querySelector('.page.active');
+    if (!activePage) return;
+    const pageId = activePage.id.replace('page-', '');
+    if (pageId === 'overview') { renderOverview(); }
+    else if (pageId === 'comparison') { renderComparison(); }
+    else { refreshEmpCharts(pageId); }
+}
+
+function refreshEmpCharts(empId) {
+    const emp = config.find(e => e.employee_id === empId);
+    if (!emp) return;
+    const data = allData[empId] || [];
+    const i = config.indexOf(emp);
+    const col = COLORS[i % COLORS.length];
+    const grid = document.getElementById(`epcharts_${empId}`);
+    if (!grid) return;
+    grid.innerHTML = '';
+    if (!emp.graphs.length) { grid.innerHTML = '<p style="color:var(--muted)">No graphs. Go to Settings to add graphs.</p>'; return; }
+    emp.graphs.forEach(g => {
+        const entries = data.filter(d => d.graph_name === g);
+        const win = getWindowData(entries);
+        const lat = entries.length ? entries[entries.length-1].value : 0;
+        const cid = `ep_${empId}_${g.replace(/\W/g,'_')}`;
+        const card = document.createElement('div'); card.className = 'chart-card';
+        card.innerHTML = `<div class="chart-header"><span class="chart-title">${g}</span><span class="chart-value">${Number(lat).toLocaleString()}</span></div><div class="chart-canvas"><canvas id="${cid}"></canvas></div>`;
+        grid.appendChild(card);
+        setTimeout(() => mkChart(cid,
+            win.map(d => `W${String(d.week).padStart(2,'0')} '${String(d.year).slice(2)}`),
+            [{data:win.map(d=>d.value),borderColor:col,backgroundColor:col+'22',borderWidth:2.5,tension:0.4,fill:true,pointRadius:4,pointBackgroundColor:col,pointBorderColor:'#1e293b',pointBorderWidth:2}]
+        ), 50);
+    });
+}
 
 async function sb(method, table, body, qs='') {
     const r = await fetch(`${SB_URL}/rest/v1/${table}${qs}`, {
