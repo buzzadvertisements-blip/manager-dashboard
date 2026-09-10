@@ -223,7 +223,7 @@ function refreshEmpCharts(empId) {
     grid.innerHTML = '';
     if (!emp.graphs.length) { grid.innerHTML = '<p style="color:var(--muted)">No graphs. Go to Settings to add graphs.</p>'; return; }
     emp.graphs.forEach(g => {
-        const entries = data.filter(d => d.graph_name === g);
+        const entries = fillGaps(data.filter(d => d.graph_name === g));
         const win = getWindowData(entries);
         const lat = entries.length ? entries[entries.length-1].value : 0;
         const cid = `ep_${empId}_${g.replace(/\W/g,'_')}`;
@@ -231,7 +231,7 @@ function refreshEmpCharts(empId) {
         card.innerHTML = `<div class="chart-header"><span class="chart-title">${g}</span><span class="chart-value">${Number(lat).toLocaleString()}</span></div><div class="chart-canvas"><canvas id="${cid}"></canvas></div>`;
         grid.appendChild(card);
         setTimeout(() => mkChart(cid,
-            win.map(d => `W${String(d.week).padStart(2,'0')} '${String(d.year).slice(2)}`),
+            win.map(d => weekLabel(d.year, d.week)),
             [{data:win.map(d=>d.value),borderColor:col,backgroundColor:col+'22',borderWidth:2.5,tension:0.4,fill:true,pointRadius:4,pointBackgroundColor:col,pointBorderColor:'#1e293b',pointBorderWidth:2}]
         ), 50);
     });
@@ -275,6 +275,82 @@ function getWeekDates(year, week) {
     thu.setDate(fri.getDate() + 6);
     const f = d => d.toLocaleDateString('en-US', {month:'short', day:'numeric'});
     return `${f(fri)} – ${f(thu)}`;
+}
+
+// Short date for a week's start (Friday), used on chart axis labels
+function getWeekShortDate(year, week) {
+    return friOfWeek(year, week).toLocaleDateString('en-US', {month:'short', day:'numeric'});
+}
+
+// Two-line chart tick label: "W08 '26" on top, "Feb 13" underneath
+function weekLabel(year, week) {
+    return [`W${String(week).padStart(2,'0')} '${String(year).slice(2)}`, getWeekShortDate(year, week)];
+}
+
+// The Friday that starts a given (year, week) pair, using the same Friday-start scheme as getWeekDates
+function firstFriOfYear(y) {
+    const jan1 = new Date(y, 0, 1);
+    const dow = jan1.getDay();
+    const toFri = (dow + 2) % 7;
+    const f = new Date(jan1);
+    f.setDate(jan1.getDate() - toFri);
+    return f;
+}
+function friOfWeek(year, week) {
+    const f = new Date(firstFriOfYear(year));
+    f.setDate(f.getDate() + (week - 1) * 7);
+    return f;
+}
+// Inverse of friOfWeek: which (year, week) a date falls into
+function yearWeekOfDate(date) {
+    let y = date.getFullYear();
+    while (date < firstFriOfYear(y)) y--;
+    while (date >= firstFriOfYear(y + 1)) y++;
+    const week = Math.round((date - firstFriOfYear(y)) / (7 * 86400000)) + 1;
+    return { year: y, week };
+}
+// The (year, week) immediately after the given one (handles year-end wraparound / 52 vs 53 week years)
+function nextWeek(year, week) {
+    const d = friOfWeek(year, week);
+    d.setDate(d.getDate() + 7);
+    return yearWeekOfDate(d);
+}
+
+// Fills gaps between the first and last entry of a (already-filtered) series with value:0,
+// so a stretch with no recorded weeks doesn't jump straight from one entry to the next.
+function fillGaps(entries) {
+    if (!entries.length) return [];
+    const sorted = [...entries].sort((a,b)=> a.year-b.year || a.week-b.week);
+    const map = new Map();
+    sorted.forEach(e => map.set(`${e.year}-${e.week}`, e));
+    const out = [];
+    let cur = { year: sorted[0].year, week: sorted[0].week };
+    const last = { year: sorted[sorted.length-1].year, week: sorted[sorted.length-1].week };
+    while (true) {
+        const key = `${cur.year}-${cur.week}`;
+        out.push(map.get(key) || { year: cur.year, week: cur.week, value: 0, graph_name: sorted[0].graph_name, employee_id: sorted[0].employee_id });
+        if (cur.year === last.year && cur.week === last.week) break;
+        cur = nextWeek(cur.year, cur.week);
+    }
+    return out;
+}
+
+// Continuous list of {year,week} pairs spanning the first to last week found across
+// any of the given rows (used to build a full set of week rows for a History table).
+function fillWeekList(pairs) {
+    if (!pairs.length) return [];
+    const sorted = [...pairs].sort((a,b)=> a.year-b.year || a.week-b.week);
+    const seen = new Set();
+    const uniq = sorted.filter(p=>{ const k=`${p.year}-${p.week}`; if(seen.has(k)) return false; seen.add(k); return true; });
+    const out = [];
+    let cur = { year: uniq[0].year, week: uniq[0].week };
+    const last = { year: uniq[uniq.length-1].year, week: uniq[uniq.length-1].week };
+    while (true) {
+        out.push({ year: cur.year, week: cur.week });
+        if (cur.year === last.year && cur.week === last.week) break;
+        cur = nextWeek(cur.year, cur.week);
+    }
+    return out;
 }
 
 function showPage(id) {
@@ -333,7 +409,7 @@ function renderOverview() {
     config.forEach((emp,i)=>{
         const data = allData[emp.employee_id]||[];
         emp.graphs.forEach(g=>{
-            const entries = data.filter(d=>d.graph_name===g);
+            const entries = fillGaps(data.filter(d=>d.graph_name===g));
             const latest = entries.length ? entries[entries.length-1].value : 0;
             sg.innerHTML += `<div class="summary-card"><div class="s-name">${emp.employee_name}</div><div class="s-val">${Number(latest).toLocaleString()}</div><div class="s-graph">${g}</div></div>`;
             const win = getWindowData(entries);
@@ -343,7 +419,7 @@ function renderOverview() {
             card.className = 'chart-card';
             card.innerHTML = `<div class="chart-header"><span class="chart-title">${emp.employee_name} — ${g}</span><span class="chart-value">${Number(latest).toLocaleString()}</span></div><div class="chart-canvas"><canvas id="${cid}"></canvas></div>`;
             oc.appendChild(card);
-            setTimeout(()=>mkChart(cid, win.map(d=>`W${String(d.week).padStart(2,'0')} '${String(d.year).slice(2)}`), [{data:win.map(d=>d.value),borderColor:col,backgroundColor:col+'22',borderWidth:2.5,tension:0.4,fill:true,pointRadius:4,pointBackgroundColor:col,pointBorderColor:'#1e293b',pointBorderWidth:2}]),80);
+            setTimeout(()=>mkChart(cid, win.map(d=>weekLabel(d.year, d.week)), [{data:win.map(d=>d.value),borderColor:col,backgroundColor:col+'22',borderWidth:2.5,tension:0.4,fill:true,pointRadius:4,pointBackgroundColor:col,pointBorderColor:'#1e293b',pointBorderWidth:2}]),80);
         });
     });
     if(!config.length) oc.innerHTML='<p style="color:var(--muted);grid-column:1/-1;text-align:center;padding:3rem;">No employees. Add one in Settings!</p>';
@@ -367,8 +443,8 @@ function renderComparison() {
 
     graphs.forEach(g=>{
         const allEntries = Object.values(allData).flat().filter(d=>d.graph_name===g);
-        const win = getWindowData(allEntries.filter((v,i,a)=>a.findIndex(x=>x.year===v.year&&x.week===v.week)===i).sort((a,b)=>a.year-b.year||a.week-b.week));
-        const weeks = win.map(d=>`${d.year}-W${String(d.week).padStart(2,'0')}`);
+        const dedup = allEntries.filter((v,i,a)=>a.findIndex(x=>x.year===v.year&&x.week===v.week)===i).sort((a,b)=>a.year-b.year||a.week-b.week);
+        const win = getWindowData(fillGaps(dedup));
         const cid = `comp_${g.replace(/\W/g,'_')}`;
         const card = document.createElement('div');
         card.className='comp-card';
@@ -376,10 +452,10 @@ function renderComparison() {
         c.appendChild(card);
         const ds = config.map((emp,i)=>({
             label:emp.employee_name,
-            data:weeks.map(wk=>{const[y,w]=wk.split('-W').map(Number);const e=(allData[emp.employee_id]||[]).find(d=>d.graph_name===g&&d.year===y&&d.week===w);return e?e.value:null;}),
+            data:win.map(wk=>{const e=(allData[emp.employee_id]||[]).find(d=>d.graph_name===g&&d.year===wk.year&&d.week===wk.week);return e?e.value:0;}),
             borderColor:COLORS[i%COLORS.length],backgroundColor:'transparent',borderWidth:2.5,tension:0.4,pointRadius:4,pointBackgroundColor:COLORS[i%COLORS.length],pointBorderColor:'#1e293b',pointBorderWidth:2
         }));
-        setTimeout(()=>mkChart(cid,weeks.map(w=>w.replace('-W',' W')),ds),80);
+        setTimeout(()=>mkChart(cid,win.map(d=>weekLabel(d.year, d.week)),ds),80);
     });
     if(!graphs.length) c.innerHTML+='<p style="color:var(--muted);text-align:center;padding:3rem;">No data yet.</p>';
 }
@@ -442,13 +518,13 @@ function renderEmpPages() {
     const c = document.getElementById('empPages'); c.innerHTML='';
     config.forEach((emp,i)=>{
         const data=allData[emp.employee_id]||[], col=COLORS[i%COLORS.length];
-        const weeks=[...new Set(data.map(d=>`${d.year}-${d.week}`))].sort().reverse();
+        const weeks=fillWeekList(data.map(d=>({year:d.year,week:d.week}))).slice().reverse();
 
-        const rows = weeks.map(wk=>{
-            const[y,w]=wk.split('-').map(Number);
+        const rows = weeks.map(({year:y,week:w})=>{
+            const weekHasAnyData = data.some(d=>d.year===y&&d.week===w);
             const cells=emp.graphs.map(g=>{
                 const e=data.find(d=>d.graph_name===g&&d.year===y&&d.week===w);
-                let html=e?Number(e.value).toLocaleString():'—';
+                let html=e?Number(e.value).toLocaleString():(weekHasAnyData?'—':'0');
                 if(e?.breakdown){try{const it=JSON.parse(e.breakdown);if(it.length)html+=`<div style="font-size:0.7rem;color:var(--muted);margin-top:0.2rem;">${it.map(x=>`• ${x}`).join('<br/>')}</div>`;}catch(err){}}
                 return `<td>${html}</td>`;
             }).join('');
@@ -478,14 +554,14 @@ function renderEmpPages() {
             if(!grid) return;
             if(!emp.graphs.length){ grid.innerHTML='<p style="color:var(--muted)">No graphs. Go to Settings to add graphs.</p>'; return; }
             emp.graphs.forEach(g=>{
-                const entries=data.filter(d=>d.graph_name===g);
+                const entries=fillGaps(data.filter(d=>d.graph_name===g));
                 const win=getWindowData(entries);
                 const lat=entries.length?entries[entries.length-1].value:0;
                 const cid=`ep_${emp.employee_id}_${g.replace(/\W/g,'_')}`;
                 const card=document.createElement('div'); card.className='chart-card';
                 card.innerHTML=`<div class="chart-header"><span class="chart-title">${g}</span><span class="chart-value">${Number(lat).toLocaleString()}</span></div><div class="chart-canvas"><canvas id="${cid}"></canvas></div>`;
                 grid.appendChild(card);
-                setTimeout(()=>mkChart(cid, win.map(d=>`W${String(d.week).padStart(2,'0')} '${String(d.year).slice(2)}`),
+                setTimeout(()=>mkChart(cid, win.map(d=>weekLabel(d.year, d.week)),
                     [{data:win.map(d=>d.value),borderColor:col,backgroundColor:col+'22',borderWidth:2.5,tension:0.4,fill:true,pointRadius:4,pointBackgroundColor:col,pointBorderColor:'#1e293b',pointBorderWidth:2}]),50);
             });
         },120);
